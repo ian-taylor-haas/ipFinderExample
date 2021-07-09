@@ -1,0 +1,280 @@
+<html>
+<head>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+   integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+   crossorigin=""/>
+   
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+   integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+   crossorigin=""></script>
+   
+ <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+
+
+<style type="text/css">
+	body{
+		background-color: #E0FBFC;
+		margin: 0%;
+	}
+	form.map{
+		margin: auto;
+	}
+	
+	#error{
+		color: #EF2C38;
+		display: none;
+		font-family: helvetica;
+		padding-top: 10px;
+		text-align: center;
+	}
+	
+	#header{
+		padding-bottom: 30px;
+		text-align: center;
+	}
+
+	#headerText{
+		color: #555;
+		display: inline;
+		font-family: helvetica;
+		font-size: 36px;
+	}
+	
+	#main{
+		background-color: white;
+		height: 98%;
+		margin: auto;
+		width: 80%;
+	}
+	
+	#mapid { 
+		height: 80%;
+		margin: auto;
+		marginTop: 30px;
+		width: 95%;
+		z-index: 1;
+	}
+
+	#messageContainer {
+		background-color: rgba(0,0,0,0.5);
+		bottom: 0;
+		display: none;
+		height: 100%;
+		left: 0;
+		position: relative;
+		right: 0;
+		top: 0;
+		width: 100%;
+		z-index: 401;
+	}
+
+	#messageContainerText {
+		-ms-transform: translate(-50%,-50%);
+		color: white;
+		font-size: 35px;
+		left: 50%;
+		position: absolute;
+		top: 50%;
+		transform: translate(-50%,-50%);	  
+	}
+	
+	#popUp{
+		float: right;
+		position: relative;
+	}
+	
+	#questionMark{
+		float: right;
+		margin-right: 2%;
+		padding-top: 10px;
+		padding-bottom: 0%;
+		position: relative;
+		width: 100%;
+	}
+	
+	.questionMarkPopup{
+		background-color: #555;
+		border-radius: 6px;
+		color: #fff;
+		font-size: 16px;
+		left: 50%;
+		margin-left: -350%;
+		padding: 8px;
+		position: absolute;
+		text-align: center;
+		top: 125%;
+		width: 200px;
+		z-index: 405;
+	}
+	
+	#questionMarkImage{
+		cursor: pointer;
+		height: 30px;
+		width: 30px;
+	}
+
+</style>
+
+<link rel="icon" type="image/jpg" href="/favicon.jpg"/>
+<title>Ian Haas - IP Finder Example</title>
+</head>
+  <body>
+	<form method="post" name="map" id="map">
+		<div id="main">
+			<div id="header">
+				<div href="#" id="questionMark">
+					<div id="popUp">
+						<img id ="questionMarkImage" src="question-mark.png"></img>
+						<span id ="questionMarkText" class="questionMarkPopup" style="visibility: hidden">
+							Every time this map changes, it looks at a CSV file containing nearly 100,000 lines of IP addresses with their coordinates, 
+							returns the IP addresses within the boundaries of the map, 
+							and then displays them directly onto the map for you to view!
+						</span>
+					</div>
+				</div>
+			<div id="headerText">Find Nearby IP Coordinates...</div>
+			</div>
+			<div id="mapid">
+				<div id="messageContainer">
+					<div id="messageContainerText"></div>
+				</div>
+			</div>
+			<div id="error"></div>
+		</div>
+	</form>
+
+  </body>
+</html>
+
+<script type='text/javascript'>
+
+	//Open/close explanation text when clicking ?
+	$("#questionMarkImage").on('click', function() {
+		if($("#questionMarkText").css("visibility") == "visible") {
+			$("#questionMarkText").css("visibility","hidden");
+			}
+		else {
+			$("#questionMarkText").css("visibility","visible");
+		}
+		return false;
+	});
+	
+	//Close explanation text
+	$(document).click(function(e){
+		if($(e.target).closest("#questionMarkText").length != 0) return false;
+		$("#questionMarkText").css("visibility","hidden");
+	});
+
+	var xhttp = new XMLHttpRequest();
+
+	//Initialize map, start at Indianapolis
+	var mymap = L.map('mapid', {
+		preferCanvas: true
+	});
+	mymap.on('moveend', findIPs);
+	mymap.setView([39.8154, -86.1581], 12);
+	var myRenderer = L.canvas({ padding: 0.5 });
+
+	L.tileLayer('https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=pk.eyJ1Ijoic3BlY3QzcjAwMSIsImEiOiJja2t6c3Fxd2gwZ25kMnZ1aXpleTU4dm8xIn0.eVjK9edq63PueNDSiRU4Dw', {
+    attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+    maxZoom: 18,
+    id: 'mapbox/streets-v11',
+    tileSize: 512,
+    zoomOffset: -1,
+    accessToken: 'your.mapbox.access.token'
+	}).addTo(mymap);
+
+	function findIPs(){
+
+		var mapDiv = $("#mapid");
+		
+		//Disable user editing map
+		mymap.removeControl(mymap.zoomControl);
+		mymap.dragging.disable();
+		mymap.scrollWheelZoom.disable();
+		
+		//Display loading message, errors if need be
+		var error = $("#error");
+		var container = $("#messageContainer");
+		var containerText = $("#messageContainerText");
+		var headerText = $("#headerText");
+		var $totalIPsFound = 0;
+		
+		error.css("display","none");
+		error.html("");
+		container.css("display","block");
+		containerText.html("Gathering IP addresses...");
+
+		var $north = mymap.getBounds().getNorth();
+		var $east = mymap.getBounds().getEast();
+		var $south = mymap.getBounds().getSouth();
+		var $west = mymap.getBounds().getWest();
+		var $getIPSURL = document.URL.substr(0,document.URL.lastIndexOf('/'))+"/getIPs.php";
+
+		// Send request, use POST in case file has been updated
+		xhttp.open("POST", $getIPSURL, true);
+		xhttp.onreadystatechange = function () {
+	  
+		  if(xhttp.readyState === XMLHttpRequest.DONE) {
+			var status = xhttp.status;
+			var response = xhttp.responseText;
+			// The request has been completed successfully
+			if (status === 200) {
+				//Ensure IPs have been found
+				if(response !== ''){
+					var $ipObjectArr = JSON.parse(response);
+					var $ipObjectArrLength = $ipObjectArr.length;
+					var $ipAddress = "";
+					var $latitude = "";
+					var $longitude = "";
+					var $thisIP = "";
+					var $marker = "";
+					containerText.html("Applying IPs...");
+					for (var i = 0; i < $ipObjectArrLength; i++){
+						$thisIP = $ipObjectArr[i];
+						$ipAddress = $thisIP.ipAddress;
+						$latitude = $thisIP.latitude;
+						$longitude = $thisIP.longitude;
+						$totalIPsFound = $totalIPsFound + $thisIP.ipsFound;
+						$marker = L.circleMarker([$latitude, $longitude]).addTo(mymap);
+						$marker.bindPopup("IP(s): <b>"+$ipAddress+"</b><br/> Lat: <b>"+$latitude+"</b><br/> Long: <b>"+$longitude+"</b>");
+						}
+				}
+			} 
+			else {
+				//Server timeout
+				console.log(status);
+				if(status === 503){
+					errorText = "Server timeout, please try again later";
+				}
+				//Other error
+				else{
+					errorText = "There was an error retrieving the IP addresses. Error code: "+status+".";
+				}
+				
+				error.css("display","block");
+				error.html(errorText);
+				
+			}
+			
+			headerText.html("Total IP Addresses Found: "+$totalIPsFound.toLocaleString());
+
+			//Renable map
+			mymap.addControl(mymap.zoomControl);
+			mymap.dragging.enable();
+			mymap.scrollWheelZoom.enable();
+			
+			container.css("display","none");
+			containerText.html("");
+		  }
+	  
+		};
+		
+		//Send request
+        xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+        xhttp.send("latMax="+$north+"&latMin="+$south+"&longMax="+$east+"&longMin="+$west);
+
+}
+
+</script>
